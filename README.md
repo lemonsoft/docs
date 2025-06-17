@@ -128,16 +128,52 @@ Edit
 ✅ Step 2: Extract and Print major version Using javap
 Run this shell script to analyze the class file version (Java major version):
 
-bash
-Copy
-Edit
-while read jar; do
-    classFile=$(jar tf "$jar" | grep '\.class$' | head -1)
-    if [[ -n "$classFile" ]]; then
-        major=$(javap -verbose -cp "$jar" "$classFile" 2>/dev/null | grep "major version" | head -1 | awk '{print $3}')
-        echo "$jar => major version: $major"
-    fi
-done < jars.txt
+function Get-JavaVersionFromMajor {
+    param([int]$major)
+
+    switch ($major) {
+        45 { return "Java 1.1" }
+        46 { return "Java 1.2" }
+        47 { return "Java 1.3" }
+        48 { return "Java 1.4" }
+        49 { return "Java 5" }
+        50 { return "Java 6" }
+        51 { return "Java 7" }
+        52 { return "Java 8" }
+        53 { return "Java 9" }
+        54 { return "Java 10" }
+        55 { return "Java 11" }
+        56 { return "Java 12" }
+        57 { return "Java 13" }
+        58 { return "Java 14" }
+        59 { return "Java 15" }
+        60 { return "Java 16" }
+        61 { return "Java 17" }
+        62 { return "Java 18" }
+        63 { return "Java 19" }
+        64 { return "Java 20" }
+        65 { return "Java 21" }
+        Default { return "Unknown" }
+    }
+}
+
+Get-Content "jars.txt" | ForEach-Object {
+    $jarPath = $_
+    if (Test-Path $jarPath) {
+        $classEntry = & jar tf $jarPath | Where-Object { $_ -like "*.class" } | Select-Object -First 1
+        if ($classEntry) {
+            $javapOutput = & javap -verbose -cp $jarPath $classEntry 2>$null
+            $majorVersion = ($javapOutput | Select-String "major version").ToString().Split()[-1]
+            $javaVersion = Get-JavaVersionFromMajor -major [int]$majorVersion
+            Write-Output "$jarPath => major version $majorVersion (Java $javaVersion)"
+        } else {
+            Write-Output "$jarPath => No .class file found"
+        }
+    } else {
+        Write-Output "$jarPath => File not found"
+    }
+}
+
 
 
 ############################

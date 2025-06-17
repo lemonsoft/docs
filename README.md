@@ -97,41 +97,47 @@ task buildDockerImage(type: Exec) {
 
 ################### Gradle script to print java version of dependencis ################
 
-#!/bin/bash
+ou want to know the Java class file major version (e.g., 52 for Java 8) of each dependency.
 
-echo "Dependency JARs and required Java versions:"
-echo "---------------------------------------------"
+To do this, you'll need to:
 
+Extract the JAR files from Gradle’s dependency cache, and
+
+Run javap -verbose or jdeps to inspect a .class file inside each JAR.
+
+🔁 Recommended Alternative Workflow
+✅ Step 1: Print All Dependency JARs (Gradle Task)
+Add to build.gradle:
+
+groovy
+Copy
+Edit
+task printDependencyJars {
+    doLast {
+        configurations.runtimeClasspath.resolvedConfiguration.resolvedArtifacts.each {
+            println it.file
+        }
+    }
+}
+Run it:
+
+bash
+Copy
+Edit
+./gradlew -q printDependencyJars > jars.txt
+✅ Step 2: Extract and Print major version Using javap
+Run this shell script to analyze the class file version (Java major version):
+
+bash
+Copy
+Edit
 while read jar; do
-    if [[ -f "$jar" ]]; then
-        version=$(jdeps -verbose "$jar" 2>/dev/null | grep "class file version" | head -n1 | awk '{print $NF}')
-        if [[ -n "$version" ]]; then
-            echo "$jar => class file version $version (Java $(get_java_version $version))"
-        else
-            echo "$jar => Unknown"
-        fi
+    classFile=$(jar tf "$jar" | grep '\.class$' | head -1)
+    if [[ -n "$classFile" ]]; then
+        major=$(javap -verbose -cp "$jar" "$classFile" 2>/dev/null | grep "major version" | head -1 | awk '{print $3}')
+        echo "$jar => major version: $major"
     fi
 done < jars.txt
 
-# Helper function: map class file version to Java version
-get_java_version() {
-    case $1 in
-        52) echo "8" ;;
-        53) echo "9" ;;
-        54) echo "10" ;;
-        55) echo "11" ;;
-        56) echo "12" ;;
-        57) echo "13" ;;
-        58) echo "14" ;;
-        59) echo "15" ;;
-        60) echo "16" ;;
-        61) echo "17" ;;
-        62) echo "18" ;;
-        63) echo "19" ;;
-        64) echo "20" ;;
-        65) echo "21" ;;
-        *)  echo "Unknown" ;;
-    esac
-}
 
 ############################

@@ -93,3 +93,45 @@ task buildDockerImage(type: Exec) {
   "type": "groovy",
   "content": "import org.sonatype.nexus.repository.storage.Query;\nimport org.sonatype.nexus.repository.storage.StorageFacet;\nimport org.sonatype.nexus.repository.Repository;\nimport org.sonatype.nexus.repository.storage.Component;\nimport java.time.Instant;\nimport java.time.temporal.ChronoUnit;\n\n// === Configuration ===\ndef repositoryName = \"my-snapshot-repo\"\ndef targetGroup = \"com.mycompany\"\ndef minAgeDays = 30  // Only delete if older than this\n\ndef repo = repository.repositoryManager.get(repositoryName)\nif (!repo) {\n    log.warn(\"Repository not found: ${repositoryName}\")\n    return\n}\n\ndef tx = repo.facet(StorageFacet).txSupplier().get()\ntx.begin()\ntry {\n    def cutoffDate = Instant.now().minus(minAgeDays, ChronoUnit.DAYS)\n    def allComponents = tx.findComponents(Query.builder().where(\"group = :group\").param(\"group\", targetGroup).build(), [repo])\n    def grouped = [:].withDefault { [:].withDefault { [] } }\n\n    allComponents.each { Component c ->\n        def key = c.group + \":\" + c.name\n        grouped[key][c.version] << c\n    }\n\n    grouped.each { key, versionsMap ->\n        versionsMap.each { version, components ->\n            if (version.endsWith(\"-SNAPSHOT\")) {\n                def releaseVersion = version.replace(\"-SNAPSHOT\", \"\")\n                if (versionsMap.containsKey(releaseVersion)) {\n                    components.each { Component snapshotComponent ->\n                        def createdDate = snapshotComponent.created?.toInstant()\n                        if (createdDate != null && createdDate.isBefore(cutoffDate)) {\n                            log.info(\"Deleting snapshot ${snapshotComponent.group}:${snapshotComponent.name}:${snapshotComponent.version} (created ${createdDate}) — release ${releaseVersion} exists and age > ${minAgeDays} days\")\n                            tx.deleteComponent(snapshotComponent)\n                        } else {\n                            log.info(\"Skipping ${snapshotComponent.group}:${snapshotComponent.name}:${snapshotComponent.version} — too recent or no creation date\")\n                        }\n                    }\n                }\n            }\n        }\n    }\n\n    tx.commit()\n} catch (Exception e) {\n    log.error(\"Error while deleting components: \", e)\n    tx.rollback()\n} finally {\n    tx.close()\n}"
 }
+
+
+################### Gradle script to print java version of dependencis ################
+
+#!/bin/bash
+
+echo "Dependency JARs and required Java versions:"
+echo "---------------------------------------------"
+
+while read jar; do
+    if [[ -f "$jar" ]]; then
+        version=$(jdeps -verbose "$jar" 2>/dev/null | grep "class file version" | head -n1 | awk '{print $NF}')
+        if [[ -n "$version" ]]; then
+            echo "$jar => class file version $version (Java $(get_java_version $version))"
+        else
+            echo "$jar => Unknown"
+        fi
+    fi
+done < jars.txt
+
+# Helper function: map class file version to Java version
+get_java_version() {
+    case $1 in
+        52) echo "8" ;;
+        53) echo "9" ;;
+        54) echo "10" ;;
+        55) echo "11" ;;
+        56) echo "12" ;;
+        57) echo "13" ;;
+        58) echo "14" ;;
+        59) echo "15" ;;
+        60) echo "16" ;;
+        61) echo "17" ;;
+        62) echo "18" ;;
+        63) echo "19" ;;
+        64) echo "20" ;;
+        65) echo "21" ;;
+        *)  echo "Unknown" ;;
+    esac
+}
+
+############################

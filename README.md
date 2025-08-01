@@ -236,3 +236,113 @@ public class SnowflakeVariantDialect extends Dialect {
         return sql + (hasOffset ? " LIMIT ? OFFSET ?" : " LIMIT ?");
     }
 }
+
+**********************************
+package com.example.dialect;
+
+import java.sql.Types;
+
+import org.hibernate.dialect.Dialect;
+import org.hibernate.dialect.identity.IdentityColumnSupport;
+import org.hibernate.dialect.identity.IdentityColumnSupportImpl;
+import org.hibernate.engine.jdbc.env.spi.NameQualifierSupport;
+import org.hibernate.type.StandardBasicTypes;
+
+public class SnowflakeCustomDialect extends Dialect {
+
+    public SnowflakeCustomDialect() {
+        super();
+
+        // Register SQL types
+        registerColumnType(Types.VARCHAR, "VARCHAR");
+        registerColumnType(Types.BIGINT, "NUMBER(38,0)");
+        registerColumnType(Types.INTEGER, "NUMBER(10,0)");
+        registerColumnType(Types.BOOLEAN, "BOOLEAN");
+        registerColumnType(Types.DOUBLE, "FLOAT");
+        registerColumnType(Types.DATE, "DATE");
+        registerColumnType(Types.TIMESTAMP, "TIMESTAMP");
+        registerColumnType(Types.JAVA_OBJECT, "VARIANT");
+
+        // Optional: register Snowflake functions
+        registerFunction("parse_json", new org.hibernate.dialect.function.StandardSQLFunction("PARSE_JSON", StandardBasicTypes.STRING));
+    }
+
+    // ✅ Identity column support
+    @Override
+    public IdentityColumnSupport getIdentityColumnSupport() {
+        return new SnowflakeIdentityColumnSupport();
+    }
+
+    // Optional: tell Hibernate we don't support sequences
+    @Override
+    public boolean supportsSequences() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsIdentityColumns() {
+        return true;
+    }
+
+    @Override
+    public String getIdentityColumnString() {
+        return "AUTOINCREMENT"; // or "IDENTITY"
+    }
+
+    @Override
+    public String getIdentitySelectString() {
+        return "SELECT LAST_INSERT_ID()"; // Not actually supported; Snowflake handles this automatically
+    }
+
+    // Optional: help Hibernate with object qualification
+    @Override
+    public NameQualifierSupport getNameQualifierSupport() {
+        return NameQualifierSupport.BOTH;
+    }
+
+    @Override
+    public boolean supportsInsertSelectIdentity() {
+        return true;
+    }
+
+    @Override
+    public String appendIdentitySelectToInsert(String insertSQL) {
+        return insertSQL; // Snowflake returns the ID without special handling
+    }
+
+    @Override
+    public boolean supportsJdbcConnectionLobCreation() {
+        return false;
+    }
+}
+*********************************
+
+package com.example.dialect;
+
+import org.hibernate.dialect.identity.IdentityColumnSupportImpl;
+
+public class SnowflakeIdentityColumnSupport extends IdentityColumnSupportImpl {
+
+    @Override
+    public boolean supportsIdentityColumns() {
+        return true;
+    }
+
+    @Override
+    public String getIdentitySelectString(String table, String column, int type) {
+        // Not used by Snowflake directly; return dummy
+        return "SELECT LAST_INSERT_ID()";
+    }
+
+    @Override
+    public String getIdentityColumnString(int type) {
+        return "AUTOINCREMENT"; // or "IDENTITY"
+    }
+
+    @Override
+    public boolean hasDataTypeInIdentityColumn() {
+        return false;
+    }
+}
+
+****************

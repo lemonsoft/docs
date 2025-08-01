@@ -346,3 +346,57 @@ public class SnowflakeIdentityColumnSupport extends IdentityColumnSupportImpl {
 }
 
 ****************
+public class SnowflakeCustomDialect extends org.hibernate.dialect.Dialect {
+
+    public SnowflakeCustomDialect() {
+        super();
+
+        registerColumnType(Types.BIGINT, "NUMBER(38,0)");
+        registerColumnType(Types.VARCHAR, "VARCHAR");
+        registerColumnType(Types.BOOLEAN, "BOOLEAN");
+
+        // Important
+        registerColumnType(Types.JAVA_OBJECT, "VARIANT");
+    }
+
+    @Override
+    public IdentityColumnSupport getIdentityColumnSupport() {
+        return new IdentityColumnSupportImpl() {
+            @Override
+            public boolean supportsIdentityColumns() {
+                return true;
+            }
+
+            @Override
+            public String getIdentitySelectString(String table, String column, int type) {
+                return null; // Snowflake handles identity transparently
+            }
+
+            @Override
+            public String getIdentityColumnString(int type) {
+                return "AUTOINCREMENT";
+            }
+        };
+    }
+
+    @Override
+    public boolean supportsInsertSelectIdentity() {
+        return true;
+    }
+
+    @Override
+    public String appendIdentitySelectToInsert(String insertSQL) {
+        return insertSQL; // Hibernate assumes the database will return the ID
+    }
+
+    @Override
+    public boolean supportsIdentityColumns() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsSequences() {
+        return false;
+    }
+}
+***********

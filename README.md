@@ -177,3 +177,62 @@ Get-Content "jars.txt" | ForEach-Object {
 
 
 ############################
+package com.example.dialect;
+
+import java.sql.Types;
+
+import org.hibernate.dialect.Dialect;
+import org.hibernate.type.StandardBasicTypes;
+import org.hibernate.dialect.function.StandardSQLFunction;
+
+public class SnowflakeVariantDialect extends Dialect {
+
+    public SnowflakeVariantDialect() {
+        super();
+
+        // Register basic SQL types
+        registerColumnType(Types.VARCHAR, "VARCHAR");
+        registerColumnType(Types.INTEGER, "NUMBER(38,0)");
+        registerColumnType(Types.BIGINT, "NUMBER(38,0)");
+        registerColumnType(Types.BOOLEAN, "BOOLEAN");
+        registerColumnType(Types.DOUBLE, "FLOAT");
+        registerColumnType(Types.DATE, "DATE");
+        registerColumnType(Types.TIMESTAMP, "TIMESTAMP");
+
+        // Register VARIANT as custom SQL type
+        registerColumnType(Types.JAVA_OBJECT, "VARIANT");
+
+        // Optional: register PARSE_JSON as SQL function if needed
+        registerFunction("parse_json", new StandardSQLFunction("PARSE_JSON", StandardBasicTypes.STRING));
+    }
+
+    @Override
+    public boolean supportsIdentityColumns() {
+        return true;
+    }
+
+    @Override
+    public String getIdentityColumnString() {
+        return "AUTOINCREMENT";
+    }
+
+    @Override
+    public String getIdentitySelectString() {
+        return "SELECT LAST_INSERT_ID()";
+    }
+
+    @Override
+    public boolean supportsSequences() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsLimit() {
+        return true;
+    }
+
+    @Override
+    public String getLimitString(String sql, boolean hasOffset) {
+        return sql + (hasOffset ? " LIMIT ? OFFSET ?" : " LIMIT ?");
+    }
+}

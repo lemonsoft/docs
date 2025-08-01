@@ -400,3 +400,57 @@ public class SnowflakeCustomDialect extends org.hibernate.dialect.Dialect {
     }
 }
 ***********
+You will manually fetch the next value using SELECT MAX(id) + 1 (or a sequence, if you use one).
+
+Step 1: Define a Custom Generator
+java
+Copy
+Edit
+package com.example.snowflake;
+
+import org.hibernate.id.IdentifierGenerator;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+
+import java.io.Serializable;
+import java.sql.ResultSet;
+import java.sql.Statement;
+
+public class SnowflakeIdentityGenerator implements IdentifierGenerator {
+    @Override
+    public Serializable generate(SharedSessionContractImplementor session, Object object) {
+        try (Statement stmt = session.connection().createStatement()) {
+            ResultSet rs = stmt.executeQuery("SELECT MAX(ID) + 1 FROM EMPLOYEE");
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate identity value", e);
+        }
+        throw new RuntimeException("No ID generated");
+    }
+}
+This mimics an identity behavior. Replace MAX(ID) + 1 with a call to a sequence or custom logic if needed.
+
+Step 2: Use the Generator in Your Entity
+java
+Copy
+Edit
+@Entity
+@Table(name = "EMPLOYEE")
+public class Employee {
+
+    @Id
+    @GeneratedValue(generator = "snowflake-id")
+    @GenericGenerator(name = "snowflake-id", strategy = "com.example.snowflake.SnowflakeIdentityGenerator")
+    @Column(name = "ID")
+    private Long id;
+
+    @Column(name = "EMP_NAME")
+    private String name;
+
+    @Column(name = "EMAIL_ADDRESS")
+    private String email;
+
+    // Constructors, getters, setters
+}
+******

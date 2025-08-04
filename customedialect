@@ -1,0 +1,41 @@
+package com.example.dialect;
+
+import org.hibernate.dialect.Dialect;
+import java.sql.Types;
+
+public class SnowflakeCustomDialect extends Dialect {
+
+    public SnowflakeCustomDialect() {
+        super();
+
+        registerColumnType(Types.VARCHAR, "VARCHAR");
+        registerColumnType(Types.INTEGER, "INTEGER");
+        registerColumnType(Types.BIGINT, "BIGINT");
+        registerColumnType(Types.DOUBLE, "DOUBLE");
+        registerColumnType(Types.DATE, "DATE");
+        registerColumnType(Types.TIMESTAMP, "TIMESTAMP");
+
+        // Add more mappings as needed
+    }
+
+    @Override
+    public boolean supportsSequences() {
+        return true;
+    }
+
+    @Override
+    public String getSequenceNextValString(String sequenceName) {
+        // Snowflake syntax: SELECT <sequence>.nextval
+        return "SELECT " + sequenceName + ".nextval";
+    }
+
+    @Override
+    public String getSelectSequenceNextValString(String sequenceName) {
+        return getSequenceNextValString(sequenceName);
+    }
+
+    @Override
+    public boolean supportsPooledSequences() {
+        return false;
+    }
+}

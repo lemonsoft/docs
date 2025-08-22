@@ -141,3 +141,36 @@ class BatchJobTest {
         String callExternalApi(String input);
     }
 }
+***************partitioning ********
+
+@Bean
+public PartitionHandler partitionHandler() {
+    return new TaskExecutorPartitionHandler() {{
+        setGridSize(4); // 4 partitions
+        setTaskExecutor(new SimpleAsyncTaskExecutor());
+    }};
+}
+
+@Bean
+public Partitioner partitioner(EntityManager em) {
+    return gridSize -> {
+        Map<String, ExecutionContext> partitions = new HashMap<>();
+        Long minId = (Long) em.createQuery("SELECT MIN(e.id) FROM MyEntity e WHERE e.status = 'NEW'").getSingleResult();
+        Long maxId = (Long) em.createQuery("SELECT MAX(e.id) FROM MyEntity e WHERE e.status = 'NEW'").getSingleResult();
+        
+        long targetSize = (maxId - minId) / gridSize + 1;
+
+        long start = minId;
+        long end = start + targetSize - 1;
+
+        for (int i = 0; i < gridSize; i++) {
+            ExecutionContext ctx = new ExecutionContext();
+            ctx.putLong("minId", start);
+            ctx.putLong("maxId", end);
+            partitions.put("partition" + i, ctx);
+            start += targetSize;
+            end += targetSize;
+        }
+        return partitions;
+    };
+}

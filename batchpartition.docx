@@ -1,0 +1,212 @@
+Here’s a complete working example for a ColumnRangePartitioner with JpaPagingItemReader:
+
+1. ColumnRangePartitioner.java
+package com.example.batch.partition;
+
+import org.springframework.batch.core.partition.support.Partitioner;
+import org.springframework.batch.item.ExecutionContext;
+
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
+import javax.persistence.Query;
+import java.util.HashMap;
+import java.util.Map;
+
+public class ColumnRangePartitioner implements Partitioner {
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    private String table;
+    private String column;
+
+    public void setTable(String table) {
+        this.table = table;
+    }
+
+    public void setColumn(String column) {
+        this.column = column;
+    }
+
+    @Override
+    public Map<String, ExecutionContext> partition(int gridSize) {
+        Map<String, ExecutionContext> result = new HashMap<>();
+
+        // Find min and max values of the partitioning column
+        Query minQuery = entityManager.createQuery("SELECT MIN(e." + column + ") FROM " + table + " e");
+        Query maxQuery = entityManager.createQuery("SELECT MAX(e." + column + ") FROM " + table + " e");
+
+        Long min = (Long) minQuery.getSingleResult();
+        Long max = (Long) maxQuery.getSingleResult();
+
+        long targetSize = (max - min) / gridSize + 1;
+
+        long start = min;
+        long end = start + targetSize - 1;
+
+        for (int i = 0; i < gridSize; i++) {
+            ExecutionContext context = new ExecutionContext();
+
+            if (end >= max) {
+                end = max;
+            }
+
+            context.putLong("minValue", start);
+            context.putLong("maxValue", end);
+
+            result.put("partition" + i, context);
+
+            start = end + 1;
+            end = start + targetSize - 1;
+
+            if (start > max) {
+                break;
+            }
+        }
+
+        return result;
+    }
+}
+
+2. BatchConfig.java
+package com.example.batch.config;
+
+import com.example.batch.partition.ColumnRangePartitioner;
+import com.example.batch.entity.Customer;
+import jakarta.persistence.EntityManagerFactory;
+import org.springframework.batch.core.*;
+import org.springframework.batch.core.configuration.annotation.*;
+import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.core.partition.support.PartitionHandler;
+import org.springframework.batch.core.partition.support.TaskExecutorPartitionHandler;
+import org.springframework.batch.item.database.JpaPagingItemReader;
+import org.springframework.batch.item.database.orm.JpaNativeQueryProvider;
+import org.springframework.batch.item.support.builder.JpaPagingItemReaderBuilder;
+import org.springframework.batch.repeat.exception.ExceptionHandler;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+
+import jakarta.persistence.EntityManager;
+
+@Configuration
+@EnableBatchProcessing
+public class BatchConfig {
+
+    @Autowired
+    private JobBuilderFactory jobBuilderFactory;
+    @Autowired
+    private StepBuilderFactory stepBuilderFactory;
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
+
+    /**
+     * Partitioner bean
+     */
+    @Bean
+    public ColumnRangePartitioner partitioner(EntityManager entityManager) {
+        ColumnRangePartitioner partitioner = new ColumnRangePartitioner();
+        partitioner.setTable("Customer"); // JPA entity name, not table name
+        partitioner.setColumn("id");      // Partition by primary key column
+        return partitioner;
+    }
+
+    /**
+     * ItemReader for each partition
+     */
+    @Bean
+    @StepScope
+    public JpaPagingItemReader<Customer> reader(
+            @Value("#{stepExecutionContext[minValue]}") Long minValue,
+            @Value("#{stepExecutionContext[maxValue]}") Long maxValue) {
+
+        return new JpaPagingItemReaderBuilder<Customer>()
+                .name("customerReader")
+                .entityManagerFactory(entityManagerFactory)
+                .queryString("SELECT c FROM Customer c WHERE c.id BETWEEN :min AND :max")
+                .parameterValues(Map.of("min", minValue, "max", maxValue))
+                .pageSize(100)
+                .build();
+    }
+
+    /**
+     * Worker step executed for each partition
+     */
+    @Bean
+    public Step workerStep() {
+        return stepBuilderFactory.get("workerStep")
+                .<Customer, Customer>chunk(50)
+                .reader(reader(null, null))
+                .writer(items -> {
+                    for (Customer item : items) {
+                        System.out.println("Processing: " + item);
+                    }
+                })
+                .build();
+    }
+
+    /**
+     * Master step that handles partitioning
+     */
+    @Bean
+    public Step masterStep(ColumnRangePartitioner partitioner) {
+        return stepBuilderFactory.get("masterStep")
+                .partitioner("workerStep", partitioner)
+                .step(workerStep())
+                .partitionHandler(partitionHandler())
+                .build();
+    }
+
+    /**
+     * Partition handler using async task executor
+     */
+    @Bean
+    public PartitionHandler partitionHandler() {
+        TaskExecutorPartitionHandler handler = new TaskExecutorPartitionHandler();
+        handler.setTaskExecutor(new SimpleAsyncTaskExecutor());
+        handler.setStep(workerStep());
+        handler.setGridSize(4);
+        return handler;
+    }
+
+    /**
+     * The Job
+     */
+    @Bean
+    public Job partitionedJob(ColumnRangePartitioner partitioner) {
+        return jobBuilderFactory.get("partitionedJob")
+                .incrementer(new RunIdIncrementer())
+                .start(masterStep(partitioner))
+                .build();
+    }
+}
+
+3. Customer.java (Entity Example)
+package com.example.batch.entity;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.Id;
+
+@Entity
+public class Customer {
+    @Id
+    @GeneratedValue
+    private Long id;
+
+    private String name;
+
+    // getters & setters
+}
+
+
+✅ With this setup:
+
+ColumnRangePartitioner calculates ID ranges.
+
+Each partition passes minValue / maxValue into the reader.
+
+JpaPagingItemReader queries only that range.
+
+Worker steps run in parallel.
